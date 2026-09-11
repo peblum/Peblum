@@ -14,6 +14,7 @@
 #include "board/board.h"
 #include "applib/graphics/gtypes.h"
 #include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/battery.h>
 #include <pbl/drivers/backlight.h>
 #include "mfg/mfg_info.h"
 #include "pbl/os/mutex.h"
@@ -32,6 +33,7 @@
 #endif
 #include "pbl/services/bluetooth/ble_hrm.h"
 #include "pbl/services/settings/settings_file.h"
+#include "pbl/services/system_task.h"
 #include "pbl/services/timeline/peek.h"
 #include "kernel/events.h"
 #include "kernel/event_loop.h"
@@ -173,6 +175,11 @@ static bool s_stationary_mode_enabled = true;
 
 #define PREF_KEY_CHARGE_LIMIT_PCT "chargeLimitPct"
 static uint8_t s_charge_limit_pct = CHARGE_LIMIT_PCT_DISABLED;
+
+#ifdef CONFIG_FAST_CHARGE_SETTING
+#define PREF_KEY_FAST_CHARGE "fastCharge"
+static bool s_fast_charge_enabled = true;
+#endif
 
 #define PREF_KEY_DEFAULT_WORKER "workerId"
 static Uuid s_default_worker = UUID_INVALID_INIT;
@@ -563,6 +570,18 @@ static bool prv_set_s_charge_limit_pct(uint8_t *pct) {
   battery_charge_limit_handle_pref_change();
   return true;
 }
+
+#ifdef CONFIG_FAST_CHARGE_SETTING
+static void prv_fast_charge_apply(void *data) {
+  battery_set_fast_charge(s_fast_charge_enabled);
+}
+
+static bool prv_set_s_fast_charge_enabled(bool *enabled) {
+  s_fast_charge_enabled = *enabled;
+  system_task_add_callback(prv_fast_charge_apply, NULL);
+  return true;
+}
+#endif
 
 static bool prv_set_s_default_worker(Uuid *uuid) {
   s_default_worker = *uuid;
@@ -1096,6 +1115,10 @@ void shell_prefs_init(void) {
 
   // Subscribe to shake events for motion backlight only if the setting is enabled
   accel_manager_set_motion_backlight_enabled(s_backlight_motion_enabled);
+
+#ifdef CONFIG_FAST_CHARGE_SETTING
+  system_task_add_callback(prv_fast_charge_apply, NULL);
+#endif
 
   // Enable touch sensor for touch backlight only if the setting is not Off
 #ifdef CONFIG_TOUCH
