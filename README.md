@@ -19,6 +19,10 @@ source and to land useful work while it waits upstream, starting with battery
 and charging improvements for the Pebble Time 2. It is a complete fork that
 tracks upstream and carries all release branches and tags.
 
+**Looking for maintainers.** Peblum needs new maintainers. If you would like
+to help maintain it or take it over, [open an
+issue](https://github.com/peblum/Peblum/issues/new).
+
 ## Resources
 
 Here's a quick summary of resources to help you find your way around:
