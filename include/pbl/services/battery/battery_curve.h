@@ -33,6 +33,8 @@ uint32_t battery_curve_lookup_percent_by_voltage(uint32_t battery_mv, bool is_ch
 int32_t battery_curve_lookup_percent_with_scaling_factor(
     int battery_mv, bool is_charging, uint32_t scaling_factor);
 
+uint8_t battery_curve_get_low_power_percent(void);
+
 uint32_t battery_curve_get_hours_remaining(uint32_t percent_remaining);
 
 uint32_t battery_curve_get_percent_remaining(uint32_t hours);

@@ -3,10 +3,19 @@
 
 #include "board/board.h"
 #include "pbl/services/battery/battery_curve.h"
+#include "pbl/util/math.h"
+
+uint8_t battery_curve_get_low_power_percent(void) {
+#ifdef CONFIG_BATTERY_LOW_POWER_PERCENT
+  return MAX(CONFIG_BATTERY_LOW_POWER_PERCENT, BOARD_CONFIG_POWER.low_power_threshold);
+#else
+  return BOARD_CONFIG_POWER.low_power_threshold;
+#endif
+}
 
 uint32_t battery_curve_get_percent_remaining(uint32_t hours) {
   return ((hours * 100) / BOARD_CONFIG_POWER.battery_capacity_hours) +
-    BOARD_CONFIG_POWER.low_power_threshold;
+    battery_curve_get_low_power_percent();
 }
 
 // TODO: nRF Fuel gauge lib provides TTE estimation
@@ -14,10 +23,10 @@ uint32_t battery_curve_get_percent_remaining(uint32_t hours) {
 // it is, we need to refactor APIs and battery FSM a bit to use TTE value
 // directly (i.e. not from % remaining).
 uint32_t battery_curve_get_hours_remaining(uint32_t percent_remaining) {
-  if (percent_remaining <= BOARD_CONFIG_POWER.low_power_threshold) {
+  if (percent_remaining <= battery_curve_get_low_power_percent()) {
     return 0;
   }
-  percent_remaining -= BOARD_CONFIG_POWER.low_power_threshold;
+  percent_remaining -= battery_curve_get_low_power_percent();
   return ((BOARD_CONFIG_POWER.battery_capacity_hours * percent_remaining) / 100);
 }
 

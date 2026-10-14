@@ -169,6 +169,10 @@ uint32_t battery_curve_lookup_voltage_by_percent(uint32_t percent, bool is_charg
   return battery_mv;
 }
 
+uint8_t battery_curve_get_low_power_percent(void) {
+  return BOARD_CONFIG_POWER.low_power_threshold;
+}
+
 //! This call is used internally with PreciseBatteryChargeState
 //! So must remove low_power_threshold to get correct remaining hours
 //! before low_power_mode is triggered

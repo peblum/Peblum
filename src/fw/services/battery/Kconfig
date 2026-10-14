@@ -33,6 +33,17 @@ config BATTERY_WARNING_SECOND_PERCENT
       Battery percentage for the second warning. A value of 0 uses the
       default time-based threshold of 12 hours remaining.
 
+config BATTERY_LOW_POWER_PERCENT
+    int "Low power mode threshold (%)"
+    depends on NRF_FUEL_GAUGE
+    range 0 100
+    default 0
+    help
+      Battery percentage at which the watch enters low power mode, keeping
+      the cell out of the deep discharge range on a missed charge. A value
+      of 0 uses the board's threshold. Starting up on a nearly empty
+      battery still shuts down at the board's threshold.
+
 config BATTERY_GAUGE_DIAG_LOG
     bool "Periodic fuel gauge diagnostic logging"
     default n

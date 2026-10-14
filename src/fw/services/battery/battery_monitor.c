@@ -7,6 +7,7 @@
 #include "kernel/low_power.h"
 #include "kernel/util/standby.h"
 #include "pbl/services/battery/battery_charge_limit.h"
+#include "pbl/services/battery/battery_curve.h"
 #include "pbl/services/firmware_update.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/system_task.h"
@@ -184,12 +185,15 @@ void battery_monitor_handle_state_change_event(PreciseBatteryChargeState state) 
   bool critical = (state.charge_percent == 0) && !state.is_charging;
 
 #ifndef CONFIG_RECOVERY_FW
-  const uint32_t LOW_POWER_PERCENT = ratio32_from_percent(BOARD_CONFIG_POWER.low_power_threshold);
+  const uint32_t LOW_POWER_PERCENT = ratio32_from_percent(battery_curve_get_low_power_percent());
+  const uint32_t BOOT_LOCKOUT_PERCENT =
+      ratio32_from_percent(BOARD_CONFIG_POWER.low_power_threshold);
 
   bool low_power = !state.is_charging && (state.charge_percent <= LOW_POWER_PERCENT);
-  if (low_power && s_first_run && !state.is_plugged) {
+  bool too_low_to_boot = !state.is_charging && (state.charge_percent <= BOOT_LOCKOUT_PERCENT);
+  if (too_low_to_boot && s_first_run && !state.is_plugged) {
     s_low_on_first_run = true;
-  } else if (!low_power) {
+  } else if (!too_low_to_boot) {
     s_low_on_first_run = false;
   }
 #else
