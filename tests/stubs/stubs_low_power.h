@@ -13,3 +13,10 @@ void low_power_exit(void) {
 bool low_power_is_active(void) {
   return false;
 }
+
+void low_power_enter_idle(void) {
+}
+
+bool low_power_is_idle(void) {
+  return false;
+}

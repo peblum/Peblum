@@ -18,6 +18,7 @@
 #include <stdbool.h>
 
 static bool s_low_power_active, s_prev_low_power_active;
+static bool s_low_power_idle;
 static TimerID s_toggle_timer = TIMER_INVALID_ID;
 
 static void prv_low_power_launcher_task_callback(void *unused) {
@@ -82,11 +83,25 @@ void low_power_enter(void) {
     return;
   }
 #endif
+  s_low_power_idle = false;
+  prv_low_power_transition(true);
+}
+
+void low_power_enter_idle(void) {
+  if (s_low_power_active) {
+    return;
+  }
+  s_low_power_idle = true;
   prv_low_power_transition(true);
 }
 
 void low_power_exit(void) {
+  s_low_power_idle = false;
   prv_low_power_transition(false);
+}
+
+bool low_power_is_idle(void) {
+  return s_low_power_active && s_low_power_idle;
 }
 
 bool low_power_is_active(void) {

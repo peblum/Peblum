@@ -16,3 +16,7 @@ void low_power_exit(void);
 
 //! Get low power state
 bool low_power_is_active(void);
+
+void low_power_enter_idle(void);
+
+bool low_power_is_idle(void);

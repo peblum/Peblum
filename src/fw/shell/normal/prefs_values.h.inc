@@ -22,6 +22,9 @@
   PREFS_MACRO(PREF_KEY_BACKLIGHT_PRESET, s_backlight_preset)
   PREFS_MACRO(PREF_KEY_BACKLIGHT_AMBIENT_THRESHOLD, s_backlight_ambient_threshold)
   PREFS_MACRO(PREF_KEY_STATIONARY, s_stationary_mode_enabled)
+#ifdef CONFIG_IDLE_POWER_SAVER
+  PREFS_MACRO(PREF_KEY_IDLE_POWER_SAVER, s_idle_power_saver_enabled)
+#endif
   PREFS_MACRO(PREF_KEY_CHARGE_LIMIT_PCT, s_charge_limit_pct)
 #ifdef CONFIG_FAST_CHARGE_SETTING
   PREFS_MACRO(PREF_KEY_FAST_CHARGE, s_fast_charge_enabled)

@@ -10,10 +10,12 @@
 #include "comm/bt_lock.h"
 #include <pbl/drivers/battery.h>
 #include "kernel/event_loop.h"
+#include "kernel/low_power.h"
 #include "kernel/ui/modals/modal_manager.h"
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/accel_manager.h"
 #include "pbl/services/analytics/analytics.h"
+#include "pbl/services/battery/battery_state.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/regular_timer.h"
 #include "pbl/services/system_task.h"
@@ -32,6 +34,8 @@ PBL_LOG_MODULE_DEFINE(service_stationary, CONFIG_SERVICE_STATIONARY_LOG_LEVEL);
 #define STATIONARY_ENABLED_DIALOG_TIMEOUT_MS 1800000
 #define STATIONARY_WELCOME_BACK_DIALOG_TIMEOUT_MS 2000
 #define ACCEL_MAX_IDLE_DELTA 50
+#define ACCEL_FLAT_MIN_Z 900
+#define ACCEL_FLAT_MAX_XY 250
 
 #define DEBUG_STATIONARY 0
 
@@ -87,8 +91,17 @@ static bool prv_update_and_check_accel_is_stationary(void) {
   return prv_compute_delta_pos(&last_accel_data, &s_last_accel_data) < ACCEL_MAX_IDLE_DELTA;
 }
 
+static bool prv_idle_power_saver_enabled(void) {
+#ifdef CONFIG_IDLE_POWER_SAVER
+  return stationary_idle_power_saver_get_enabled();
+#else
+  return false;
+#endif
+}
+
 static bool prv_is_allowed_to_run(void) {
-  return (stationary_get_enabled() && !s_stationary_mode_inhibit);
+  return (stationary_get_enabled() || prv_idle_power_saver_enabled()) &&
+         !s_stationary_mode_inhibit;
 }
 
 static void prv_update_stationary_enabled(void *data) {
@@ -101,9 +114,11 @@ static void prv_update_stationary_enabled(void *data) {
 
 void stationary_handle_battery_connection_change_event(void) {
   PBL_LOG_D_DBG(DEBUG_STATIONARY, "Stationary mode battery state change event received");
+#ifdef CONFIG_IDLE_POWER_SAVER
   if (battery_is_usb_connected()) {
-  } else {
+    stationary_idle_power_saver_wake();
   }
+#endif
   prv_update_stationary_enabled(NULL);
 }
 
@@ -167,6 +182,29 @@ void stationary_set_enabled(bool enabled) {
   launcher_task_add_callback(prv_update_stationary_enabled, NULL);
 }
 
+#ifdef CONFIG_IDLE_POWER_SAVER
+bool stationary_idle_power_saver_get_enabled(void) {
+  return shell_prefs_get_idle_power_saver_enabled();
+}
+
+void stationary_idle_power_saver_set_enabled(bool enabled) {
+  if (enabled == stationary_idle_power_saver_get_enabled()) {
+    return;
+  }
+  shell_prefs_set_idle_power_saver_enabled(enabled);
+  launcher_task_add_callback(prv_update_stationary_enabled, NULL);
+}
+
+void stationary_idle_power_saver_wake(void) {
+  if (!low_power_is_idle()) {
+    return;
+  }
+  PBL_LOG_DBG("Idle Power Saver: waking up");
+  low_power_exit();
+  battery_state_force_update();
+}
+#endif
+
 void stationary_run_level_enable(bool enable) {
 #if !STATIONARY_MODE
   return;
@@ -212,6 +250,26 @@ static void prv_enter_stationary_state(void) {
   s_current_state = StationaryStateStationary;
 }
 
+static void prv_enter_power_saver(void) {
+  PBL_LOG_DBG("Idle Power Saver: entering low power mode");
+  low_power_enter_idle();
+  battery_state_force_update();
+}
+
+static bool prv_is_lying_flat(void) {
+  return (abs(s_last_accel_data.z) >= ACCEL_FLAT_MIN_Z) &&
+         (abs(s_last_accel_data.x) <= ACCEL_FLAT_MAX_XY) &&
+         (abs(s_last_accel_data.y) <= ACCEL_FLAT_MAX_XY);
+}
+
+static void prv_go_to_sleep(void) {
+  if (prv_idle_power_saver_enabled() && prv_is_lying_flat()) {
+    prv_enter_power_saver();
+  } else if (stationary_get_enabled()) {
+    prv_enter_stationary_state();
+  }
+}
+
 static void prv_exit_stationary(void) {
   accel_enable_high_sensitivity(false);
 
@@ -253,7 +311,7 @@ static void prv_exit_disabled_state(void) {
 static void prv_handle_awake_action(StationaryAction action) {
   switch (action) {
     case StationaryActionGoToSleep:
-      prv_enter_stationary_state();
+      prv_go_to_sleep();
       break;
     case StationaryActionWakeUp:
       prv_reset_stationary_counter();
@@ -289,7 +347,7 @@ static void prv_handle_stationary_action(StationaryAction action) {
 static void prv_handle_peeking_action(StationaryAction action) {
   switch (action) {
     case StationaryActionGoToSleep:
-      prv_enter_stationary_state();
+      prv_go_to_sleep();
       break;
     case StationaryActionWakeUp:
       prv_enter_awake_state();

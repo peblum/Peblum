@@ -228,6 +228,31 @@ void test_battery_ui_fsm__transitions(void) {
   cl_assert(!s_modal_onscreen);
 }
 
+void test_battery_ui_fsm__low_power_ends_without_charging(void) {
+  PreciseBatteryChargeState nop = prv_make_state(50, false, false);
+
+  prv_set_state(PowerLow);
+  prv_change_state(nop);
+  cl_assert(s_low_power);
+
+  prv_set_state(PowerGood);
+  prv_change_state(nop);
+  cl_assert(!s_low_power && !s_modal_onscreen && !s_critical);
+}
+
+void test_battery_ui_fsm__low_power_ends_on_a_full_charger(void) {
+  PreciseBatteryChargeState nop = prv_make_state(50, false, false),
+                            fully_charged = prv_make_state(100, false, true);
+
+  prv_set_state(PowerLow);
+  prv_change_state(nop);
+  cl_assert(s_low_power);
+
+  prv_set_state(PowerGood);
+  prv_change_state(fully_charged);
+  cl_assert(!s_low_power && s_modal_onscreen && !s_modal_charging);
+}
+
 void test_battery_ui_fsm__shutdown(void) {
   PreciseBatteryChargeState nop = prv_make_state(50, false, false),
                             charging = prv_make_state(50, true, true);

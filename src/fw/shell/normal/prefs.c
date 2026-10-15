@@ -173,6 +173,15 @@ static uint32_t s_backlight_ambient_threshold = 0; // default set from board con
 #define PREF_KEY_STATIONARY "stationaryMode"
 static bool s_stationary_mode_enabled = true;
 
+#ifdef CONFIG_IDLE_POWER_SAVER
+#define PREF_KEY_IDLE_POWER_SAVER "idlePowerSaver"
+#ifdef CONFIG_IDLE_POWER_SAVER_DEFAULT_ON
+static bool s_idle_power_saver_enabled = true;
+#else
+static bool s_idle_power_saver_enabled = false;
+#endif
+#endif
+
 #define PREF_KEY_CHARGE_LIMIT_PCT "chargeLimitPct"
 static uint8_t s_charge_limit_pct = CHARGE_LIMIT_PCT_DISABLED;
 
@@ -559,6 +568,13 @@ static bool prv_set_s_stationary_mode_enabled(bool *enabled) {
   s_stationary_mode_enabled = *enabled;
   return true;
 }
+
+#ifdef CONFIG_IDLE_POWER_SAVER
+static bool prv_set_s_idle_power_saver_enabled(bool *enabled) {
+  s_idle_power_saver_enabled = *enabled;
+  return true;
+}
+#endif
 
 static bool prv_set_s_charge_limit_pct(uint8_t *pct) {
   if (*pct != CHARGE_LIMIT_PCT_DISABLED &&
@@ -1547,6 +1563,16 @@ bool shell_prefs_get_stationary_enabled(void) {
 void shell_prefs_set_stationary_enabled(bool enabled) {
   prv_pref_set(PREF_KEY_STATIONARY, &enabled, sizeof(enabled));
 }
+
+#ifdef CONFIG_IDLE_POWER_SAVER
+bool shell_prefs_get_idle_power_saver_enabled(void) {
+  return s_idle_power_saver_enabled;
+}
+
+void shell_prefs_set_idle_power_saver_enabled(bool enabled) {
+  prv_pref_set(PREF_KEY_IDLE_POWER_SAVER, &enabled, sizeof(enabled));
+}
+#endif
 
 uint8_t shell_prefs_get_charge_limit_pct(void) {
   return s_charge_limit_pct;
