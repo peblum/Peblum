@@ -29,3 +29,11 @@ void stationary_wake_up(void);
 
 //! Called by our event service system when there is a battery connection change
 void stationary_handle_battery_connection_change_event(void);
+
+#ifdef CONFIG_IDLE_POWER_SAVER
+bool stationary_idle_power_saver_get_enabled(void);
+
+void stationary_idle_power_saver_set_enabled(bool enabled);
+
+void stationary_idle_power_saver_wake(void);
+#endif

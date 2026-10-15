@@ -116,6 +116,12 @@ bool shell_prefs_get_stationary_enabled(void) {
   return false;
 }
 
+#ifdef CONFIG_IDLE_POWER_SAVER
+bool shell_prefs_get_idle_power_saver_enabled(void) {
+  return false;
+}
+#endif
+
 uint8_t shell_prefs_get_charge_limit_pct(void) {
   return 0;
 }

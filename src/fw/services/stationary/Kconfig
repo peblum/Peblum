@@ -6,6 +6,21 @@ config SERVICE_STATIONARY
     help
       Stationary (idle-detection) service.
 
+config IDLE_POWER_SAVER
+    bool "Idle Power Saver setting"
+    depends on SERVICE_STATIONARY
+    help
+      Offer an Idle Power Saver setting. With it on, a watch left lying
+      still off the charger enters low power mode instead of the lighter
+      stand-by mode, and pressing SELECT on the low power watchface wakes
+      it again.
+
+config IDLE_POWER_SAVER_DEFAULT_ON
+    bool "Idle Power Saver on by default"
+    depends on IDLE_POWER_SAVER
+    help
+      Start with the Idle Power Saver setting on until the user changes it.
+
 if SERVICE_STATIONARY
 
 module = SERVICE_STATIONARY
