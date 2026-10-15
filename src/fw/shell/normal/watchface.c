@@ -22,6 +22,7 @@
 #include "applib/app_launch_reason.h"
 #include "applib/ui/click_internal.h"
 #include "pbl/services/notifications/do_not_disturb.h"
+#include "pbl/services/stationary.h"
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
 
@@ -269,6 +270,14 @@ void watchface_init(void) {
 }
 
 void watchface_handle_button_event(PebbleEvent *e) {
+#ifdef CONFIG_IDLE_POWER_SAVER
+  if (low_power_is_idle()) {
+    if ((e->type == PEBBLE_BUTTON_UP_EVENT) && (e->button.button_id == BUTTON_ID_SELECT)) {
+      stationary_idle_power_saver_wake();
+    }
+    return;
+  }
+#endif
   if (prv_should_ignore_button_click()) {
     return;
   }

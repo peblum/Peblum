@@ -4,17 +4,20 @@
 #include "face.h"
 
 #include "applib/app.h"
+#include "applib/battery_state_service.h"
 #include "applib/graphics/gdraw_command_image.h"
 #include "applib/graphics/text.h"
 #include "applib/tick_timer_service.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/kino/kino_layer.h"
 #include "applib/ui/ui.h"
+#include "kernel/low_power.h"
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/battery/battery_monitor.h"
 #include "pbl/services/clock.h"
+#include "pbl/services/i18n/i18n.h"
 #include "util/time/time.h"
 
 #include <string.h>
@@ -24,14 +27,33 @@ typedef struct {
   TextLayer low_power_time_layer;
   TextLayer low_power_date_layer;
   KinoLayer low_power_kino_layer;
+#ifdef CONFIG_IDLE_POWER_SAVER
+  TextLayer low_power_wake_hint_layer;
+#endif
   char time_text[6];
   char date_text[16];
 } LowPowerFaceData;
 
 static LowPowerFaceData *s_low_power_data;
 
+static void prv_update_wake_hint(void) {
+#ifdef CONFIG_IDLE_POWER_SAVER
+  const bool select_wakes = low_power_is_idle();
+  layer_set_hidden(&s_low_power_data->low_power_kino_layer.layer, select_wakes);
+  layer_set_hidden(&s_low_power_data->low_power_wake_hint_layer.layer, !select_wakes);
+#endif
+}
+
+#ifdef CONFIG_IDLE_POWER_SAVER
+static void prv_battery_state_changed(BatteryChargeState charge_state) {
+  prv_update_wake_hint();
+}
+#endif
+
 static void prv_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
   char *time_format;
+
+  prv_update_wake_hint();
 
   if (clock_is_24h_style()) {
     time_format = "%R";
@@ -62,6 +84,10 @@ static void prv_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
 static void deinit(void) {
   tick_timer_service_unsubscribe();
   kino_layer_deinit(&s_low_power_data->low_power_kino_layer);
+#ifdef CONFIG_IDLE_POWER_SAVER
+  battery_state_service_unsubscribe();
+  i18n_free_all(s_low_power_data);
+#endif
 
   app_free(s_low_power_data);
 }
@@ -130,6 +156,24 @@ static void init(void) {
                                   GColorBlack, GColorClear, text_alignment, text_overflow_mode);
   layer_add_child(&s_low_power_data->low_power_window.layer,
                   &s_low_power_data->low_power_date_layer.layer);
+
+#ifdef CONFIG_IDLE_POWER_SAVER
+  const GFont wake_hint_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  const char *wake_hint_text = i18n_get("Press Select to wake", s_low_power_data);
+  const GSize wake_hint_size = app_graphics_text_layout_get_content_size(
+      wake_hint_text, wake_hint_font, s_low_power_data->low_power_window.layer.bounds,
+      GTextOverflowModeWordWrap, text_alignment);
+  const int date_bottom_y = date_frame.origin.y + date_frame.size.h;
+  const int wake_hint_y = date_bottom_y + (DISP_ROWS - date_bottom_y - wake_hint_size.h) / 2;
+  const GRect wake_hint_frame = GRect(0, wake_hint_y, DISP_COLS, wake_hint_size.h);
+  text_layer_init_with_parameters(&s_low_power_data->low_power_wake_hint_layer,
+                                  &wake_hint_frame, wake_hint_text, wake_hint_font,
+                                  GColorBlack, GColorClear, text_alignment,
+                                  GTextOverflowModeWordWrap);
+  layer_add_child(&s_low_power_data->low_power_window.layer,
+                  &s_low_power_data->low_power_wake_hint_layer.layer);
+  battery_state_service_subscribe(prv_battery_state_changed);
+#endif
 
   // Because of the delay before the tick timer service first calls prv_minute_tick,
   // we call it ourselves to update the time right away
