@@ -66,7 +66,7 @@ static const BatteryUIState ui_states[] = {
     BatteryGood, BatteryWarning, BatteryLowPower, BatteryCharging
   }},
   [BatteryLowPower] = { .enter = prv_enter_low_power, .exit = prv_exit_low_power, .next_state = {
-    BatteryWarning, BatteryCritical, BatteryCharging
+    BatteryGood, BatteryWarning, BatteryCritical, BatteryCharging, BatteryFullyCharged
   }},
   [BatteryCritical] = { .enter = prv_enter_critical, .exit = prv_exit_critical, .next_state = {
     BatteryLowPower, BatteryCharging
