@@ -86,6 +86,9 @@ typedef struct {
   bool pipeline_draining;
   uint32_t drain_samples_remaining;
 
+  // Free space the driver reported right after starting, i.e. its capacity
+  uint32_t driver_capacity_bytes;
+
   // Finish-event delivery
   bool finish_enabled;
   PebbleTask finish_task;
@@ -197,6 +200,19 @@ static void prv_log_silence(uint8_t vol, uint8_t effective_vol) {
   }
 }
 
+//! A zero-length write stores nothing and returns the space the driver has left.
+static uint32_t prv_driver_free_bytes(void) {
+  return audio_write((AudioDevice *)AUDIO, NULL, 0);
+}
+
+static uint32_t prv_driver_queued_samples(void) {
+  const uint32_t free_bytes = prv_driver_free_bytes();
+  if (free_bytes >= s_state.driver_capacity_bytes) {
+    return 0;
+  }
+  return (s_state.driver_capacity_bytes - free_bytes) / sizeof(int16_t);
+}
+
 static void prv_start_audio(uint8_t vol) {
   const uint8_t effective_vol = prv_effective_volume(vol);
 
@@ -209,6 +225,7 @@ static void prv_start_audio(uint8_t vol) {
   audio_init((AudioDevice *)AUDIO);
   audio_set_volume((AudioDevice *)AUDIO, effective_vol);
   audio_start((AudioDevice *)AUDIO, prv_audio_trans_cb);
+  s_state.driver_capacity_bytes = prv_driver_free_bytes();
 }
 
 static void prv_stop_audio(void) {
@@ -408,10 +425,31 @@ static uint32_t prv_read_and_convert_pcm(int16_t *out, uint32_t max_out_samples)
   return out_pos;
 }
 
-//! Caller must hold s_lock.
-static void prv_refill_locked(void) {
+//! Caller must hold s_lock. A stream may have filled the driver's whole buffer,
+//! so its padding also covers what the driver still holds.
+static void prv_begin_drain(void) {
+  s_state.pipeline_draining = true;
+  s_state.drain_samples_remaining = SPEAKER_PIPELINE_DRAIN_SAMPLES;
+  if (s_state.source_type == SpeakerSourceStream) {
+    s_state.drain_samples_remaining += prv_driver_queued_samples();
+  }
+  s_state.state = SpeakerStateDraining;
+}
+
+//! Caller must hold s_lock. Takes no more than the driver has room for, since
+//! audio_write() drops whatever does not fit.
+//! @return true if stream data was written and more may fit
+static bool prv_refill_locked(void) {
   if (s_state.state == SpeakerStateIdle) {
-    return;
+    return false;
+  }
+
+  uint32_t max_samples = prv_driver_free_bytes() / sizeof(int16_t);
+  if (max_samples > SPEAKER_REFILL_SAMPLES) {
+    max_samples = SPEAKER_REFILL_SAMPLES;
+  }
+  if (max_samples == 0) {
+    return false;
   }
 
   uint32_t samples_generated = 0;
@@ -419,23 +457,24 @@ static void prv_refill_locked(void) {
 
   if (s_state.source_type == SpeakerSourceNoteSeq) {
     samples_generated = note_seq_fill(&s_state.note_seq, s_state.refill_buf,
-                                      SPEAKER_REFILL_SAMPLES);
+                                      max_samples);
     source_exhausted = (samples_generated == 0);
   } else if (s_state.source_type == SpeakerSourceStream) {
-    samples_generated = prv_read_and_convert_pcm(s_state.refill_buf,
-                                                  SPEAKER_REFILL_SAMPLES);
+    samples_generated = prv_read_and_convert_pcm(s_state.refill_buf, max_samples);
     if (samples_generated == 0 && pcm_stream_is_done(&s_state.pcm_stream)) {
       source_exhausted = true;
     } else if (samples_generated == 0) {
-      // No data but not done — write silence to keep DMA fed
-      PBL_ANALYTICS_ADD(speaker_stream_underrun_count, 1);
-      memset(s_state.refill_buf, 0, SPEAKER_REFILL_SAMPLES * sizeof(int16_t));
-      samples_generated = SPEAKER_REFILL_SAMPLES;
+      // Write nothing: the driver pads an empty buffer with silence itself, and
+      // padding here would delay the data that is about to arrive.
+      if (prv_driver_queued_samples() == 0) {
+        PBL_ANALYTICS_ADD(speaker_stream_underrun_count, 1);
+      }
+      return false;
     }
   } else if (s_state.source_type == SpeakerSourceTone) {
     uint32_t to_gen = s_state.tone_samples_remaining;
-    if (to_gen > SPEAKER_REFILL_SAMPLES) {
-      to_gen = SPEAKER_REFILL_SAMPLES;
+    if (to_gen > max_samples) {
+      to_gen = max_samples;
     }
     if (to_gen == 0) {
       source_exhausted = true;
@@ -456,8 +495,7 @@ static void prv_refill_locked(void) {
     memset(s_state.mix_buf, 0, sizeof(int32_t) * SPEAKER_REFILL_SAMPLES);
     uint32_t max_generated = 0;
     for (uint32_t i = 0; i < s_state.num_tracks; i++) {
-      uint32_t n = track_fill(&s_state.tracks[i], s_state.track_scratch,
-                              SPEAKER_REFILL_SAMPLES);
+      uint32_t n = track_fill(&s_state.tracks[i], s_state.track_scratch, max_samples);
       for (uint32_t j = 0; j < n; j++) {
         s_state.mix_buf[j] += s_state.track_scratch[j];
       }
@@ -480,17 +518,15 @@ static void prv_refill_locked(void) {
   if (source_exhausted) {
     // Drain: pad with silence so the driver's queued audio finishes playing.
     if (!s_state.pipeline_draining) {
-      s_state.pipeline_draining = true;
-      s_state.drain_samples_remaining = SPEAKER_PIPELINE_DRAIN_SAMPLES;
-      s_state.state = SpeakerStateDraining;
+      prv_begin_drain();
     }
     uint32_t to_gen = s_state.drain_samples_remaining;
     if (to_gen == 0) {
       prv_stop_internal(SpeakerFinishReasonDone);
-      return;
+      return false;
     }
-    if (to_gen > SPEAKER_REFILL_SAMPLES) {
-      to_gen = SPEAKER_REFILL_SAMPLES;
+    if (to_gen > max_samples) {
+      to_gen = max_samples;
     }
     memset(s_state.refill_buf, 0, to_gen * sizeof(int16_t));
     s_state.drain_samples_remaining -= to_gen;
@@ -501,11 +537,16 @@ static void prv_refill_locked(void) {
     audio_write((AudioDevice *)AUDIO, s_state.refill_buf,
                 samples_generated * sizeof(int16_t));
   }
+  return (s_state.source_type == SpeakerSourceStream) && !source_exhausted &&
+         (samples_generated > 0);
 }
 
+//! A stream fills all the room the driver has, so a late refill does not
+//! leave the DAC playing silence.
 static void prv_refill_bg(void *data) {
   mutex_lock(s_lock);
-  prv_refill_locked();
+  while (prv_refill_locked()) {
+  }
   mutex_unlock(s_lock);
 }
 
@@ -774,12 +815,12 @@ void speaker_service_stream_close(void) {
     return;
   }
 
+  pcm_stream_mark_closing(&s_state.pcm_stream);
   if (s_state.pcm_stream.count > 0) {
     // Data remaining - enter draining state
-    pcm_stream_mark_closing(&s_state.pcm_stream);
     s_state.state = SpeakerStateDraining;
   } else {
-    prv_stop_internal(SpeakerFinishReasonDone);
+    prv_begin_drain();
   }
 
   mutex_unlock(s_lock);
