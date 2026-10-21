@@ -887,16 +887,40 @@ static void prv_mic_click_handler(ClickRecognizerRef recognizer, void *context) 
   }
 }
 
+static void prv_note_press_in_window(ClickRecognizerRef recognizer, void *context) {
+  VoiceUiData *data = context;
+  data->buttons_pressed_in_window |= 1 << click_recognizer_get_button_id(recognizer);
+}
+
+static void prv_stop_on_held_button_release(ClickRecognizerRef recognizer, void *context) {
+  VoiceUiData *data = context;
+  const uint8_t button_bit = 1 << click_recognizer_get_button_id(recognizer);
+  const bool held_since_before_window = !(data->buttons_pressed_in_window & button_bit);
+  data->buttons_pressed_in_window &= ~button_bit;
+  if (held_since_before_window && data->state == StateRecording) {
+    PBL_LOG_DBG("Held button released, stop dictation");
+    prv_stop_dictation(data);
+  }
+}
+
+static void prv_subscribe_hold_release(void *context) {
+  window_raw_click_subscribe(BUTTON_ID_UP, prv_note_press_in_window, prv_stop_on_held_button_release, context);
+  window_raw_click_subscribe(BUTTON_ID_SELECT, prv_note_press_in_window, prv_stop_on_held_button_release, context);
+  window_raw_click_subscribe(BUTTON_ID_DOWN, prv_note_press_in_window, prv_stop_on_held_button_release, context);
+}
+
 static void prv_back_select_click_config_provider(void *context) {
   window_set_click_context(BUTTON_ID_BACK, context);
   window_single_click_subscribe(BUTTON_ID_BACK, &prv_mic_click_handler);
   window_set_click_context(BUTTON_ID_SELECT, context);
   window_single_click_subscribe(BUTTON_ID_SELECT, &prv_mic_click_handler);
+  prv_subscribe_hold_release(context);
 }
 
 static void prv_back_click_config_provider(void *context) {
   window_set_click_context(BUTTON_ID_BACK, context);
   window_single_click_subscribe(BUTTON_ID_BACK, &prv_mic_click_handler);
+  prv_subscribe_hold_release(context);
 }
 
 static void prv_enable_select_click(VoiceUiData *data) {

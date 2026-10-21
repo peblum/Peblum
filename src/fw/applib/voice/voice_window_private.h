@@ -61,6 +61,7 @@ typedef struct VoiceUiData {
   };
 
   VoiceUiState state;
+  uint8_t buttons_pressed_in_window;
   bool speech_detected;
   bool transcription_dialog_keep_alive_on_select;
   char *message;
